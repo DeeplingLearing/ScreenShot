@@ -23,9 +23,14 @@ CscreenshotDlg::CscreenshotDlg(CWnd* pParent /*=NULL*/)
 	, m_xScreen(0)
 	, m_yScreen(0)
 	, m_bMasked(false)
-	, m_ptCur(0)
+	, m_ptCurStart(0)
+	, m_ptCurEnd(0)
 	, m_nAlph(255)
 	, m_bPaintOther(true)
+	, m_bLbnt(false)
+	, m_bFinsh(false)
+	, m_ptMoveStart(0)
+	, m_ptMoveEnd(0)
 {
 	m_pBmp = NULL;
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
@@ -42,6 +47,7 @@ BEGIN_MESSAGE_MAP(CscreenshotDlg, CDialogEx)
 	ON_WM_MOUSEMOVE()
 //	ON_WM_ERASEBKGND()
 ON_WM_LBUTTONDOWN()
+ON_WM_LBUTTONUP()
 END_MESSAGE_MAP()
 
 CscreenshotDlg::~CscreenshotDlg()
@@ -75,7 +81,7 @@ BOOL CscreenshotDlg::OnInitDialog()
 	//初始化窗口为pop
 	SetWindowLong(m_hWnd, GWL_STYLE, (LONG)WS_POPUP);
 	//鼠标隐藏
-	//ShowCursor(FALSE);
+	ShowCursor(FALSE);
 	SetWindowPos(NULL, m_xScreen, m_yScreen, m_cxScreen, m_cyScreen, SWP_SHOWWINDOW);
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
@@ -118,9 +124,15 @@ void CscreenshotDlg::OnPaint()
 		if (m_bPaintOther) //是否需要绘制辅助信息
 		{
 			DoPaintLine(&dcMem);
-			//DoPaintTip(&dcMem);
+		//	DoPaintTip(&dcMem);
 		}
-		
+		else
+		{
+			//
+			DoCaptureRgn(&dcMem);
+
+			DoPaintRectange(&dcMem);
+		}
 
 		pDc->BitBlt(m_xScreen, m_yScreen, m_cxScreen, m_cyScreen, &dcMem, 0, 0, SRCCOPY);
 
@@ -220,11 +232,11 @@ BOOL CscreenshotDlg::DoPaintLine(CDC * pDc)
 	CPen *poldPen = pDc->SelectObject(&pen);
 
 	//x坐标
-	pDc->MoveTo(0, m_ptCur.y);
-	pDc->LineTo(m_cxScreen, m_ptCur.y);
+	pDc->MoveTo(0, m_ptCurStart.y);
+	pDc->LineTo(m_cxScreen, m_ptCurStart.y);
 	//y坐标
-	pDc->MoveTo(m_ptCur.x, 0);
-	pDc->LineTo(m_ptCur.x, m_cyScreen);
+	pDc->MoveTo(m_ptCurStart.x, 0);
+	pDc->LineTo(m_ptCurStart.x, m_cyScreen);
 
 	//释放资源
 	pDc->SelectObject(poldPen);
@@ -238,10 +250,33 @@ BOOL CscreenshotDlg::DoPaintLine(CDC * pDc)
 void CscreenshotDlg::OnMouseMove(UINT nFlags, CPoint point)
 {
 	// TODO:  在此添加消息处理程序代码和/或调用默认值
-	m_ptCur = point;
+	if (m_bLbnt)
+	{
+		//鼠标左键按下后开始获取截图区域
+		m_bPaintOther = false; //鼠标左键按下且移动鼠标时, 辅助撤销
+		m_ptCurEnd = point;
+	//	InvalidateRect(rtRgn, FALSE);
+		UpdateWindow();
+
+	}
+	else
+	{
+		//鼠标左键未按下, 移动起点坐标
+		m_ptCurStart = point;
+		UpdateWindow();
+	}
+	
+	if (m_bFinsh)
+	{
+		if (PtInRect(m_rtRgn, point))
+		{
+			m_ptMoveEnd = point;
+
+			//MoveRectange(m_ptMoveStart, m_ptMoveEnd);
+		}
+	}
 	//InvalidateRect(NULL);
 	//PostMessage(WM_PAINT);
-	UpdateWindow();
 	//CDialogEx::OnMouseMove(nFlags, point);
 }
 
@@ -264,14 +299,14 @@ BOOL CscreenshotDlg::DoPaintTip(CDC * pDc)
 	//矩形的宽高
 	int cx = 200;
 	int cy = 50;
-	pDc->Rectangle(m_ptCur.x, m_ptCur.y, m_ptCur.x + cx, m_ptCur.y + cy);
+	pDc->Rectangle(m_ptCurStart.x, m_ptCurStart.y, m_ptCurStart.x + cx, m_ptCurStart.y + cy);
 	//在提示框内绘制提示文本信息
 	CPen pen(PS_SOLID, 1, RGB(255, 255, 255));
 	CPen *oldPen = pDc->SelectObject(&pen);
 	CString strTip = _T("鼠标左键选择截图区域");
 	CRect rect;
-	rect.left = m_ptCur.x + 5;
-	rect.top = m_ptCur.y + 5;
+	rect.left = m_ptCurStart.x + 5;
+	rect.top = m_ptCurStart.y + 5;
 	rect.right = rect.left + cx;
 	rect.bottom = rect.top + cy;
 	SetBkMode(pDc->GetSafeHdc(), TRANSPARENT);
@@ -293,11 +328,136 @@ BOOL CscreenshotDlg::DoPaintTip(CDC * pDc)
 void CscreenshotDlg::OnLButtonDown(UINT nFlags, CPoint point)
 {
 	// TODO:  在此添加消息处理程序代码和/或调用默认值
-	//改变背景透明度
-	m_nAlph = 225;
-	//辅助信息撤销
-	m_bPaintOther = false;
-	//
-	UpdateWindow();
+	if (!m_bLbnt)
+	{
+		//改变背景透明度
+		m_nAlph = 200;
+		//鼠标左键按下
+		m_bLbnt = true;
+		m_ptCurStart = point;
+		//鼠标外形改变
+		SetClassLong(m_hWnd, GCL_HCURSOR, (LONG)LoadCursor(NULL, MAKEINTRESOURCE(IDC_CROSS)));
+		ShowCursor(TRUE);
+	}
+	if (m_bFinsh)
+	{
+		//拖动截取的区间
+		m_rtRgn.left = m_ptCurStart.x;
+		m_rtRgn.top = m_ptCurStart.y;
+		m_rtRgn.right = m_ptCurEnd.x;
+		m_rtRgn.bottom = m_ptCurEnd.y;
+
+		if (PtInRect(m_rtRgn, point))
+		{
+			m_ptMoveStart = point;
+		}
+
+	}
 	//CDialogEx::OnLButtonDown(nFlags, point);
+}
+
+
+// 绘制截屏区域
+BOOL CscreenshotDlg::DoCaptureRgn(CDC * pDc)
+{
+	//定义临时的内存设备环境
+	CDC *pTempDc = GetDC();
+	CDC tempDcMem;
+	tempDcMem.CreateCompatibleDC(pTempDc);
+	CBitmap *pbmpOld = tempDcMem.SelectObject(m_pBmp);
+
+	//将选定的区域位图拷贝到设备环境中
+	int iWidth = (int)abs(m_ptCurEnd.x - m_ptCurStart.x);
+	int iHeight = (int)abs(m_ptCurEnd.y - m_ptCurStart.y);
+
+	pDc->BitBlt(min(m_ptCurStart.x, m_ptCurEnd.x), min(m_ptCurStart.y, m_ptCurEnd.y), iWidth, iHeight, 
+		&tempDcMem, min(m_ptCurStart.x, m_ptCurEnd.x), min(m_ptCurStart.y, m_ptCurEnd.y), SRCCOPY);	
+
+	tempDcMem.SelectObject(pbmpOld);
+	DeleteObject(pbmpOld);
+	DeleteDC(tempDcMem);
+	ReleaseDC(pTempDc);
+
+	return TRUE;
+}
+
+
+// 绘制截取区的边框
+BOOL CscreenshotDlg::DoPaintRectange(CDC * pDc)
+{
+	//绘制边框
+	CPen pen(PS_SOLID, 2, RGB(255, 255, 255)); //白色画笔
+	CPen *oldPen = pDc->SelectObject(&pen);
+	pDc->MoveTo(m_ptCurStart.x, m_ptCurStart.y);
+	pDc->LineTo(m_ptCurEnd.x, m_ptCurStart.y);
+	pDc->LineTo(m_ptCurEnd.x, m_ptCurEnd.y);
+	pDc->LineTo(m_ptCurStart.x, m_ptCurEnd.y);
+	pDc->LineTo(m_ptCurStart.x, m_ptCurStart.y);
+
+	return TRUE;
+}
+
+//鼠标左键释放,鼠标外形改变,截取区域确定
+void CscreenshotDlg::OnLButtonUp(UINT nFlags, CPoint point)
+{
+	// TODO:  在此添加消息处理程序代码和/或调用默认值
+	if (m_bLbnt)
+	{
+		//鼠标改变
+		SetClassLong(m_hWnd, GCL_HCURSOR, (LONG)LoadCursor(NULL, MAKEINTRESOURCE(IDC_HAND)));
+		ShowCursor(TRUE);
+		//确定截取区域
+		m_ptCurEnd = point;
+
+		m_bFinsh = true;
+		ValidateRect(NULL);
+	}
+	if (m_bFinsh)
+	{
+		//保存截图
+	}
+	//CDialogEx::OnLButtonUp(nFlags, point);
+}
+
+
+// 移动矩形区域
+BOOL CscreenshotDlg::MoveRectange(CPoint pt1, CPoint pt2)
+{
+	//偏移坐标
+	int offsetX = pt2.x - pt1.x;
+	int offsetY = pt2.y - pt1.y;
+	//截取区域宽高
+	int iWidth = abs(m_ptCurEnd.x - m_ptCurStart.x);
+	int iHeight = abs(m_ptCurEnd.y - m_ptCurStart.y);
+	//改变截取区域坐标
+	m_ptCurStart.x += offsetX;
+	m_ptCurStart.y += offsetY;
+
+	m_ptCurEnd.x = m_ptCurStart.x + iWidth;
+	m_ptCurEnd.y = m_ptCurStart.y + iHeight;
+
+	CDC *pDc = GetDC();
+	DoCaptureRgn(pDc);
+	DoPaintRectange(pDc);
+
+	ReleaseDC(pDc);
+
+	return TRUE;
+}
+
+
+// 指定图片名称和保存图片到指定位置
+BOOL CscreenshotDlg::SaveImage(const CString & filePath, const CString & filename)
+{
+	//位图文件头信息
+	BITMAPFILEHEADER bpfh;
+	bpfh.bfType = 0;
+	bpfh.bfReserved1 = 0;
+	bpfh.bfReserved2 = 0;
+	//位图头信息
+	BITMAPINFO bpi;
+	//位图数据
+	
+
+	return TRUE;
 }

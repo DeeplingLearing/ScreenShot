@@ -50,8 +50,10 @@ public:
 private:
 	// 是否绘制透明背景色
 	bool m_bMasked;
-	// 鼠标坐标
-	CPoint m_ptCur;
+	// 鼠标开始坐标
+	CPoint m_ptCurStart;
+	//鼠标结束坐标
+	CPoint m_ptCurEnd;
 public:
 	// 绘制坐标线
 	BOOL DoPaintLine(CDC * pDc);
@@ -66,4 +68,26 @@ public:
 private:
 	// 是否需要绘制辅助信息
 	bool m_bPaintOther;
+	// 鼠标左键点击
+	bool m_bLbnt;
+public:
+	// 绘制截屏区域
+	BOOL DoCaptureRgn(CDC * pDc);
+	// 绘制截取区的边框
+	BOOL DoPaintRectange(CDC * pDc);
+	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
+private:
+	// 截取释放完成
+	bool m_bFinsh;
+	// 鼠标拖动起点坐标
+	CPoint m_ptMoveStart;
+	// 鼠标拖动结束的坐标
+	CPoint m_ptMoveEnd;
+	// 截取的区间
+	CRect m_rtRgn;
+public:
+	// 移动矩形区域
+	BOOL MoveRectange(CPoint pt1, CPoint pt2);
+	// 指定图片名称和保存图片到指定位置
+	BOOL SaveImage(const CString & filePath, const CString & filename);
 };

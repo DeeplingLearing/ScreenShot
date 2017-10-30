@@ -79,7 +79,7 @@ BOOL CscreenshotDlg::OnInitDialog()
 	//抓取屏幕位图
 	CaputerImage();
 	//初始化窗口为pop
-	SetWindowLong(m_hWnd, GWL_STYLE, (LONG)WS_POPUP);
+	SetWindowLong(m_hWnd, GWL_STYLE, (LONG)(WS_POPUP));
 	//鼠标隐藏
 	ShowCursor(FALSE);
 	SetWindowPos(NULL, m_xScreen, m_yScreen, m_cxScreen, m_cyScreen, SWP_SHOWWINDOW);
@@ -414,7 +414,14 @@ void CscreenshotDlg::OnLButtonUp(UINT nFlags, CPoint point)
 	}
 	if (m_bFinsh)
 	{
-		//保存截图
+		if (MessageBox(_T("完成"), _T("Tip"), MB_ICONQUESTION) == IDOK)
+		{
+			//保存截图
+			SaveImage(_T(""), _T("test.bmp"));
+			//关闭进程
+			PostMessage(WM_QUIT);
+		}
+		
 	}
 	//CDialogEx::OnLButtonUp(nFlags, point);
 }
@@ -449,15 +456,54 @@ BOOL CscreenshotDlg::MoveRectange(CPoint pt1, CPoint pt2)
 // 指定图片名称和保存图片到指定位置
 BOOL CscreenshotDlg::SaveImage(const CString & filePath, const CString & filename)
 {
+	CDC *pDc = GetDC();
+	CDC dcMem;
+	dcMem.CreateCompatibleDC(pDc);
+	CBitmap bmpMem;
+	int iWidth = abs(m_ptCurEnd.x - m_ptCurStart.x);
+	int iHeight = abs(m_ptCurEnd.y - m_ptCurStart.y);
+	bmpMem.CreateCompatibleBitmap(pDc, iWidth, iHeight);
+	dcMem.SelectObject(bmpMem);
+	dcMem.BitBlt(0, 0, iWidth, iHeight, pDc, min(m_ptCurStart.x, m_ptCurEnd.x), min(m_ptCurStart.y, m_ptCurEnd.y), SRCCOPY);
+
+	BITMAP bmp;
+	GetObject(bmpMem, sizeof(BITMAP), &bmp);
+	int widthBytes = (bmp.bmWidth * bmp.bmBitsPixel + 31) / 32; //行位补齐
+	DWORD dwSize = widthBytes * bmp.bmHeight * 4;
+
 	//位图文件头信息
 	BITMAPFILEHEADER bpfh;
-	bpfh.bfType = 0;
+	bpfh.bfType = 0x4d42;
 	bpfh.bfReserved1 = 0;
 	bpfh.bfReserved2 = 0;
+	bpfh.bfSize = dwSize + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER); //位图文件大小
+	bpfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);       //不包括调色板
 	//位图头信息
-	BITMAPINFO bpi;
+	BITMAPINFOHEADER bpih;
+	ZeroMemory(&bpih, sizeof(BITMAPINFOHEADER));
+	bpih.biSize = sizeof(BITMAPINFOHEADER);
+	bpih.biBitCount = bmp.bmBitsPixel;
+	bpih.biHeight = bmp.bmHeight;
+	bpih.biWidth = bmp.bmWidth;
+	bpih.biSizeImage = dwSize;
+	bpih.biPlanes = 1;
 	//位图数据
-	
+	HANDLE hMem = GlobalAlloc(GHND, dwSize);
+	char *pByteBuff = (char *)GlobalLock(hMem);
+	//GetDIBits函数检索指定的兼容位图的位，并使用指定的格式将它们复制到缓冲区中.
+	GetDIBits(pDc->GetSafeHdc(), bmpMem, 0, (UINT)bmp.bmHeight, pByteBuff, (BITMAPINFO *)&bpih, DIB_RGB_COLORS);
+
+	//写入位图文件格式到指定文件
+	HANDLE hfile = CreateFile(filename, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
+	DWORD dwBytesWritten;      //实际写入的字节数
+
+	//写入位图文件头
+	WriteFile(hfile, (LPSTR)&bpfh, sizeof(BITMAPFILEHEADER), &dwBytesWritten, NULL);
+	//写入位图信息头
+	WriteFile(hfile, (LPSTR)&bpih, sizeof(BITMAPINFOHEADER), &dwBytesWritten, NULL);
+	//写入位图数据
+	WriteFile(hfile, (LPSTR)pByteBuff, dwSize, &dwBytesWritten, NULL);
 
 	return TRUE;
 }
